@@ -1,0 +1,174 @@
+:root {
+    --gap: 24px;
+    --radius: 16px;
+    --cam-bg: #fff3b0;
+    --met-bg: #ddd6fe;
+    --ctl-bg: #cfe3ff;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+}
+
+.app-grid {
+    height: 100%;
+    display: grid;
+    gap: var(--gap);
+    padding: var(--gap);
+    grid-template-areas:
+        "camera metrics"
+        "controls controls";
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: 1fr auto;
+}
+
+.camera {
+    grid-area: camera;
+    background: var(--cam-bg);
+    border-radius: var(--radius);
+}
+
+.metrics {
+    grid-area: metrics;
+    background: var(--met-bg);
+    border-radius: var(--radius);
+}
+
+.controls {
+    grid-area: controls;
+    background: var(--ctl-bg);
+    border-radius: var(--radius);
+}
+
+.pane-content {
+    padding: 20px;
+}
+
+.center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.title {
+    font-size: 28px;
+    font-weight: 600;
+    opacity: .9;
+}
+
+.hint {
+    margin-top: 6px;
+    font-size: 14px;
+    opacity: .75;
+}
+
+.metrics-list {
+    margin: 12px 0 0;
+    padding-left: 18px;
+    line-height: 1.6;
+}
+
+.controls-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+}
+
+.controls-content button,
+.controls-content select {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid #c8d0e0;
+    background: #fff;
+}
+
+.controls-content button:hover {
+    background: #f6f8ff;
+    cursor: pointer;
+}
+
+@media (max-width: 900px) {
+    .app-grid {
+        grid-template-areas:
+            "camera"
+            "metrics"
+            "controls";
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto;
+    }
+}
+
+/* --- выбор фона в CameraPane --- */
+.bg-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.bg-item {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    border-radius: 16px;
+    border: 2px solid rgba(0, 0, 0, .08);
+    background: linear-gradient(135deg, #c7f9cc, #bde0fe);
+    overflow: hidden;
+    cursor: pointer;
+    padding: 0;
+}
+
+.bg-item:hover {
+    box-shadow: 0 4px 18px rgba(0, 0, 0, .08);
+}
+
+.bg-item.selected {
+    border: 4px solid #ef4444;
+}
+
+.bg-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.bg-label {
+    position: absolute;
+    left: 12px;
+    bottom: 10px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, .8);
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.confirm-row {
+    display: flex;
+    justify-content: center;
+}
+
+.confirm-btn {
+    padding: 12px 18px;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    background: #ffe1e1;
+    font-weight: 600;
+}
+
+.confirm-btn:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
