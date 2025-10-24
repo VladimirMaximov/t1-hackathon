@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    createSelfieSegmenterMP,
+    createSelfieSegmenterTFJS,
     makeBinaryMask,
-    drawCover
+    drawCover,
+    type TfjsBackend
 } from '../../lib/segmentation/tfjs/selfieSegmenter';
 import type { BodySegmenter } from '@tensorflow-models/body-segmentation';
 
@@ -34,9 +35,9 @@ export default function CameraPanel() {
     const personCanvasRef = useRef<HTMLCanvasElement | null>(null); // зеркальный человек (выходной размер)
     const workCanvasRef = useRef<HTMLCanvasElement | null>(null);   // стабильный вход для модели
 
-    // сегментер (mediapipe)
+    // сегментер (TFJS) и бэкенд
     const segRef = useRef<BodySegmenter | null>(null);
-    const [backend, setBackend] = useState<'mediapipe' | '—'>('—');
+    const [backend, setBackend] = useState<TfjsBackend | '—'>('—');
 
     // цикл
     const rafRef = useRef<number | null>(null);
@@ -50,7 +51,7 @@ export default function CameraPanel() {
     // фон
     const [bgFileUrl, setBgFileUrl] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
-    const bgOpacityRef = useRef(1.0); // 0..1 — непрозрачность фон-картинки
+    const bgOpacityRef = useRef(1.0); // 0..1 — непрозрачность картинок-фона (OVERLAY над реальным фоном)
 
     // загрузка изображения фона
     useEffect(() => {
@@ -113,12 +114,15 @@ export default function CameraPanel() {
         return c;
     }
 
-    // === медиапайповский сегментер «как в чистом файле» ===
+    // === TFJS-сегментер
     const ensureModel = useCallback(async () => {
         if (!segRef.current) {
-            const { segmenter, backendLabel } = await createSelfieSegmenterMP();
+            const { segmenter, backendLabel } = await createSelfieSegmenterTFJS({
+                modelType: 'general',
+                // modelUrl: можно НЕ указывать — возьмётся дефолтный CDN от либы.
+            });
             segRef.current = segmenter;
-            setBackend(backendLabel); // 'mediapipe'
+            setBackend(backendLabel); // 'webgpu' | 'wasm' | 'webgl'
         }
         return segRef.current!;
     }, []);
@@ -136,7 +140,7 @@ export default function CameraPanel() {
             const seg = await ensureModel();
 
             // Стабильный вход для модели (как в твоём HTML): уменьшаем кадр и подаём canvas
-            const s = 0.75;
+            const s = 0.75; // масштаб входа (можно тюнить)
             const inW = Math.max(8, Math.round(W * s));
             const inH = Math.max(8, Math.round(H * s));
             const workC = ensureWorkCanvas(inW, inH);
@@ -214,8 +218,8 @@ export default function CameraPanel() {
         fpsWin.current.frames += 1;
         const dt = now - fpsWin.current.last;
         if (dt >= 1000) {
-            const fps = Math.round((fpsWin.current.frames * 1000) / dt);
-            setFps(fps);
+            const fpsVal = Math.round((fpsWin.current.frames * 1000) / dt);
+            setFps(fpsVal);
             fpsWin.current.frames = 0; fpsWin.current.last = now;
         }
 
