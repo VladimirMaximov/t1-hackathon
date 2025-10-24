@@ -1,36 +1,53 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
 
 type Metrics = {
+    backend: string;
     fps: number;
-    cpuAvg: number;
-    cpuPeak: number;
-    gpuAvg: number;
-    gpuPeak: number;
+    latency: number;
+    status: string;
 };
 
 export default function MetricsPanel() {
-    const [m, setM] = useState<Metrics | null>(null);
+    const [m, setM] = useState<Metrics>({
+        backend: '—',
+        fps: 0,
+        latency: 0,
+        status: 'Камера остановлена',
+    });
 
     useEffect(() => {
-        const handler = (e: Event) => {
-            const detail = (e as CustomEvent<Metrics>).detail;
-            setM(detail);
+        const onMetrics = (e: Event) => {
+            const d = (e as CustomEvent).detail as Partial<Metrics>;
+            setM((prev) => ({ ...prev, ...d }));
         };
-        window.addEventListener("metrics:update", handler as EventListener);
-        return () => window.removeEventListener("metrics:update", handler as EventListener);
+        const onStarted = () => setM((prev) => ({ ...prev, status: 'Камера запущена' }));
+        const onStopped = () => setM((prev) => ({ ...prev, status: 'Камера остановлена' }));
+
+        window.addEventListener('metrics:update', onMetrics as EventListener);
+        window.addEventListener('camera:started', onStarted);
+        window.addEventListener('camera:stopped', onStopped);
+        return () => {
+            window.removeEventListener('metrics:update', onMetrics as EventListener);
+            window.removeEventListener('camera:started', onStarted);
+            window.removeEventListener('camera:stopped', onStopped);
+        };
     }, []);
 
-    const fmtMs = (x?: number) => (x == null ? "—" : `${x.toFixed(1)} мс`);
-    const fmtFps = (x?: number) => (x == null ? "—" : `${x}`);
-
     return (
-        <div className="pane-content">
-            <h3>Информация от системы</h3>
-            <ul className="metrics-list">
-                <li>FPS: {fmtFps(m?.fps)}</li>
-                <li>CPU: средняя {fmtMs(m?.cpuAvg)}; пик {fmtMs(m?.cpuPeak)};</li>
-                <li>GPU: средняя {fmtMs(m?.gpuAvg)}; пик {fmtMs(m?.gpuPeak)};</li>
-            </ul>
-        </div>
+        <section className="metrics">
+            <h3 style={{ color: '#1f6feb', marginTop: 0 }}>Информация от системы</h3>
+            <div
+                style={{
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                    border: '1px solid #e5e7eb',
+                    background: '#f7f8fb',
+                    borderRadius: 10,
+                    padding: 10,
+                }}
+            >
+                Backend: {m.backend} | FPS: {m.fps} | Lat(ms): {m.latency || '—'} | Статус: {m.status}
+            </div>
+        </section>
     );
 }
