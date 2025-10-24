@@ -38,15 +38,19 @@ export default function CameraPanel() {
     // сегментер (TFJS) и бэкенд
     const segRef = useRef<BodySegmenter | null>(null);
     const [backend, setBackend] = useState<TfjsBackend | '—'>('—');
+    const backendRef = useRef<string>('—'); // <— источник истины для метрик
 
     // цикл
     const rafRef = useRef<number | null>(null);
 
-    // метрики
+    // метрики (state + refs)
     const [fps, setFps] = useState(0);
     const [latency, setLatency] = useState(0);
+    const fpsRef = useRef(0);
+    const latencyRef = useRef(0);
     const statusRef = useRef<'Камера запущена' | 'Камера остановлена'>('Камера остановлена');
     const fpsWin = useRef({ last: performance.now(), frames: 0 });
+    const lastEmitRef = useRef(0); // троттлинг отправки метрик
 
     // фон
     const [bgFileUrl, setBgFileUrl] = useState<string | null>(null);
@@ -122,9 +126,25 @@ export default function CameraPanel() {
                 // modelUrl: можно НЕ указывать — возьмётся дефолтный CDN от либы.
             });
             segRef.current = segmenter;
-            setBackend(backendLabel); // 'webgpu' | 'wasm' | 'webgl'
+            setBackend(backendLabel);          // обновим React state (для UI)
+            backendRef.current = backendLabel; // и сразу ref (для мгновенных метрик)
         }
         return segRef.current!;
+    }, []);
+
+    // утилита: отправка метрик (троттлим до ~4 раза/сек), читаем текущие значения из refs
+    const emitMetrics = useCallback(() => {
+        const now = performance.now();
+        if (now - lastEmitRef.current < 250) return;
+        lastEmitRef.current = now;
+        window.dispatchEvent(new CustomEvent('metrics:update', {
+            detail: {
+                backend: backendRef.current, // <— всегда актуальный backend
+                fps: fpsRef.current,
+                latency: latencyRef.current,
+                status: statusRef.current
+            }
+        }));
     }, []);
 
     // композиция кадра
@@ -139,8 +159,8 @@ export default function CameraPanel() {
         try {
             const seg = await ensureModel();
 
-            // Стабильный вход для модели (как в твоём HTML): уменьшаем кадр и подаём canvas
-            const s = 0.75; // масштаб входа (можно тюнить)
+            // Стабильный вход для модели: уменьшаем кадр и подаём canvas
+            const s = 0.75; // масштаб входа
             const inW = Math.max(8, Math.round(W * s));
             const inH = Math.max(8, Math.round(H * s));
             const workC = ensureWorkCanvas(inW, inH);
@@ -152,6 +172,7 @@ export default function CameraPanel() {
             const t1 = performance.now();
             const people = await seg.segmentPeople(workC, { flipHorizontal: false, multiSegmentation: false, segmentBodyParts: false });
             const hasPerson = !!(people && people.length);
+
             // 2) маска только если есть человек
             let maskC: HTMLCanvasElement | null = null;
             if (hasPerson) {
@@ -160,7 +181,9 @@ export default function CameraPanel() {
                 maskC.getContext('2d')!.putImageData(maskImg, 0, 0);
             }
             const t2 = performance.now();
-            setLatency(Number((t2 - t1).toFixed(1)));
+            const inferMs = Number((t2 - t1).toFixed(1));
+            setLatency(inferMs);
+            latencyRef.current = inferMs;
 
             // 3) слой «зеркальный человек»
             const personC = ensurePersonCanvas(W, H);
@@ -213,18 +236,22 @@ export default function CameraPanel() {
             console.error('[CameraPanel] renderFrame error:', e);
         }
 
-        // FPS
+        // FPS-калькулятор
         const now = performance.now();
         fpsWin.current.frames += 1;
         const dt = now - fpsWin.current.last;
         if (dt >= 1000) {
             const fpsVal = Math.round((fpsWin.current.frames * 1000) / dt);
             setFps(fpsVal);
+            fpsRef.current = fpsVal;
             fpsWin.current.frames = 0; fpsWin.current.last = now;
         }
 
+        // разошлём метрики (троттлинг)
+        emitMetrics();
+
         rafRef.current = requestAnimationFrame(renderFrame);
-    }, [ensureModel, bgImage]);
+    }, [ensureModel, bgImage, emitMetrics]);
 
     // старт / стоп (события от ControlPanel)
     const startCamera = useCallback(async () => {
@@ -249,18 +276,21 @@ export default function CameraPanel() {
             const canvas = outCanvasRef.current!;
             canvas.width = vw; canvas.height = vh;
 
-            await ensureModel();
+            await ensureModel(); // здесь backendRef.current уже обновится
             setRunning(true);
             statusRef.current = 'Камера запущена';
-            window.dispatchEvent(new CustomEvent('camera:started', { detail: { backend } }));
 
-            fpsWin.current = { last: performance.now(), frames: 0 };
+            // сразу отдадим стартовые метрики с актуальным backend
+            fpsRef.current = 0;
+            latencyRef.current = 0;
+            emitMetrics();
+
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
             rafRef.current = requestAnimationFrame(renderFrame);
         } catch (e) {
             console.error('[CameraPanel] startCamera failed:', e);
         }
-    }, [renderFrame, running, selectedBg, ensureModel, backend]);
+    }, [renderFrame, running, selectedBg, ensureModel, emitMetrics]);
 
     const stopCamera = useCallback(() => {
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -274,10 +304,12 @@ export default function CameraPanel() {
 
         setRunning(false);
         statusRef.current = 'Камера остановлена';
-        window.dispatchEvent(new Event('camera:stopped'));
+        // финальный эмит, чтобы сразу увидеть статус
+        emitMetrics();
+
         const c = outCanvasRef.current!;
         c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
-    }, []);
+    }, [emitMetrics]);
 
     // внешние события
     useEffect(() => {
@@ -296,16 +328,6 @@ export default function CameraPanel() {
             window.removeEventListener('ui:opacity', onOpacity as EventListener);
         };
     }, [startCamera, stopCamera]);
-
-    // метрики → MetricsPanel
-    useEffect(() => {
-        const id = window.setInterval(() => {
-            window.dispatchEvent(new CustomEvent('metrics:update', {
-                detail: { backend, fps, latency, status: statusRef.current }
-            }));
-        }, 500);
-        return () => window.clearInterval(id);
-    }, [backend, fps, latency]);
 
     const aspectStr = vidSize ? `${vidSize.w} / ${vidSize.h}` : '16 / 9';
 

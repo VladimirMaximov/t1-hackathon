@@ -1,53 +1,36 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
 type Metrics = {
     backend: string;
     fps: number;
-    latency: number;
+    latency: number;   // ms на один проход сегментации
     status: string;
 };
 
 export default function MetricsPanel() {
-    const [m, setM] = useState<Metrics>({
-        backend: '—',
-        fps: 0,
-        latency: 0,
-        status: 'Камера остановлена',
-    });
+    const [m, setM] = useState<Metrics | null>(null);
 
     useEffect(() => {
-        const onMetrics = (e: Event) => {
-            const d = (e as CustomEvent).detail as Partial<Metrics>;
-            setM((prev) => ({ ...prev, ...d }));
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent<Metrics>).detail;
+            setM(detail);
         };
-        const onStarted = () => setM((prev) => ({ ...prev, status: 'Камера запущена' }));
-        const onStopped = () => setM((prev) => ({ ...prev, status: 'Камера остановлена' }));
-
-        window.addEventListener('metrics:update', onMetrics as EventListener);
-        window.addEventListener('camera:started', onStarted);
-        window.addEventListener('camera:stopped', onStopped);
-        return () => {
-            window.removeEventListener('metrics:update', onMetrics as EventListener);
-            window.removeEventListener('camera:started', onStarted);
-            window.removeEventListener('camera:stopped', onStopped);
-        };
+        window.addEventListener("metrics:update", handler as EventListener);
+        return () => window.removeEventListener("metrics:update", handler as EventListener);
     }, []);
 
+    const fmtFps = (x?: number) => (x == null ? "—" : `${x}`);
+    const fmtMs = (x?: number) => (x == null ? "—" : `${x.toFixed(1)}`);
+
     return (
-        <section className="metrics">
-            <h3 style={{ color: '#1f6feb', marginTop: 0 }}>Информация от системы</h3>
-            <div
-                style={{
-                    whiteSpace: 'pre-wrap',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                    border: '1px solid #e5e7eb',
-                    background: '#f7f8fb',
-                    borderRadius: 10,
-                    padding: 10,
-                }}
-            >
-                Backend: {m.backend} | FPS: {m.fps} | Lat(ms): {m.latency || '—'} | Статус: {m.status}
-            </div>
-        </section>
+        <div className="pane-content">
+            <h3>Информация от системы</h3>
+            <ul className="metrics-list" style={{ listStyle: "none", margin: 0, padding: 0, lineHeight: 1.6 }}>
+                <li><b>Backend:</b> {m?.backend ?? "—"}</li>
+                <li><b>FPS:</b> {fmtFps(m?.fps)}</li>
+                <li><b>Lat(ms):</b> {fmtMs(m?.latency)}</li>
+                <li><b>Статус:</b> {m?.status ?? "—"}</li>
+            </ul>
+        </div>
     );
 }
