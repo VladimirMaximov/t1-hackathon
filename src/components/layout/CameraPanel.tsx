@@ -32,13 +32,14 @@ export default function CameraPanel() {
 
     // оффскрины
     const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);   // маска (входной размер)
+    const maskSmoothRef = useRef<HTMLCanvasElement | null>(null);   // сглаженная маска (входной размер)
     const personCanvasRef = useRef<HTMLCanvasElement | null>(null); // зеркальный человек (выходной размер)
     const workCanvasRef = useRef<HTMLCanvasElement | null>(null);   // стабильный вход для модели
 
     // сегментер (TFJS) и бэкенд
     const segRef = useRef<BodySegmenter | null>(null);
     const [backend, setBackend] = useState<TfjsBackend | '—'>('—');
-    const backendRef = useRef<string>('—'); // <— источник истины для метрик
+    const backendRef = useRef<string>('—'); // для мгновенных метрик
 
     // цикл
     const rafRef = useRef<number | null>(null);
@@ -52,10 +53,11 @@ export default function CameraPanel() {
     const fpsWin = useRef({ last: performance.now(), frames: 0 });
     const lastEmitRef = useRef(0); // троттлинг отправки метрик
 
-    // фон
+    // фон и параметры композита
     const [bgFileUrl, setBgFileUrl] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
-    const bgOpacityRef = useRef(1.0); // 0..1 — непрозрачность картинок-фона (OVERLAY над реальным фоном)
+    const bgOpacityRef = useRef(1.0); // 0..1 — непрозрачность фон-картинки (OVERLAY)
+    const featherPxRef = useRef(0);   // 0..15 — сглаживание (px) на выходном кадре
 
     // загрузка изображения фона
     useEffect(() => {
@@ -105,6 +107,12 @@ export default function CameraPanel() {
         if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
         return c;
     }
+    function ensureMaskSmoothCanvas(w: number, h: number) {
+        if (!maskSmoothRef.current) maskSmoothRef.current = document.createElement('canvas');
+        const c = maskSmoothRef.current!;
+        if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+        return c;
+    }
     function ensurePersonCanvas(w: number, h: number) {
         if (!personCanvasRef.current) personCanvasRef.current = document.createElement('canvas');
         const c = personCanvasRef.current!;
@@ -118,6 +126,23 @@ export default function CameraPanel() {
         return c;
     }
 
+    // простое сглаживание маски через blur() на временном канвасе.
+    // blur задаём в пикселях выходного кадра и пересчитываем в пиксели маски.
+    function getSmoothedMask(maskC: HTMLCanvasElement, outW: number, outH: number, featherOutPx: number) {
+        const inW = maskC.width, inH = maskC.height;
+        if (!inW || !inH || featherOutPx <= 0) return maskC;
+        // эквивалент размытия в пикселях маски (чтобы "перо" визуально соответствовало выходу)
+        const scaleToOut = outW / inW; // используем ширину как репер
+        const blurPxMask = Math.max(0.25, featherOutPx / Math.max(1e-6, scaleToOut));
+        const tmp = ensureMaskSmoothCanvas(inW, inH);
+        const tctx = tmp.getContext('2d')!;
+        tctx.clearRect(0, 0, inW, inH);
+        tctx.filter = `blur(${blurPxMask}px)`;
+        tctx.drawImage(maskC, 0, 0);
+        tctx.filter = 'none';
+        return tmp;
+    }
+
     // === TFJS-сегментер
     const ensureModel = useCallback(async () => {
         if (!segRef.current) {
@@ -127,19 +152,19 @@ export default function CameraPanel() {
             });
             segRef.current = segmenter;
             setBackend(backendLabel);          // обновим React state (для UI)
-            backendRef.current = backendLabel; // и сразу ref (для мгновенных метрик)
+            backendRef.current = backendLabel; // и сразу ref (для метрик)
         }
         return segRef.current!;
     }, []);
 
-    // утилита: отправка метрик (троттлим до ~4 раза/сек), читаем текущие значения из refs
+    // утилита: отправка метрик (троттлинг ~250 мс)
     const emitMetrics = useCallback(() => {
         const now = performance.now();
         if (now - lastEmitRef.current < 250) return;
         lastEmitRef.current = now;
         window.dispatchEvent(new CustomEvent('metrics:update', {
             detail: {
-                backend: backendRef.current, // <— всегда актуальный backend
+                backend: backendRef.current,
                 fps: fpsRef.current,
                 latency: latencyRef.current,
                 status: statusRef.current
@@ -179,6 +204,8 @@ export default function CameraPanel() {
                 const maskImg = await makeBinaryMask(people, 0.7, { width: inW, height: inH });
                 maskC = ensureMaskCanvas(maskImg.width, maskImg.height);
                 maskC.getContext('2d')!.putImageData(maskImg, 0, 0);
+                // добавляем сглаживание (в реальном времени)
+                maskC = getSmoothedMask(maskC, W, H, featherPxRef.current);
             }
             const t2 = performance.now();
             const inferMs = Number((t2 - t1).toFixed(1));
@@ -319,13 +346,19 @@ export default function CameraPanel() {
             const v = Number((e as CustomEvent).detail); // 0..100 — непрозрачность фон-картинки
             bgOpacityRef.current = Math.max(0, Math.min(1, v / 100));
         };
+        const onFeather = (e: Event) => {
+            const v = Number((e as CustomEvent).detail); // 0..15 — перо сглаживания (px)
+            featherPxRef.current = Math.max(0, Math.min(15, Math.round(v)));
+        };
         window.addEventListener('camera:start', onStart);
         window.addEventListener('camera:stop', onStop);
         window.addEventListener('ui:opacity', onOpacity as EventListener);
+        window.addEventListener('ui:feather', onFeather as EventListener);
         return () => {
             window.removeEventListener('camera:start', onStart);
             window.removeEventListener('camera:stop', onStop);
             window.removeEventListener('ui:opacity', onOpacity as EventListener);
+            window.removeEventListener('ui:feather', onFeather as EventListener);
         };
     }, [startCamera, stopCamera]);
 
