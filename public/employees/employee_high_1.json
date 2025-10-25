@@ -1,0 +1,22 @@
+{
+    "employee": {
+        "full_name": "Софья Андреева",
+        "position": "ML-инженер",
+        "company": "T1 Холдинг",
+        "department": "AI Research",
+        "office_location": "Новосибирск, Техно Парк",
+        "contact": {
+            "email": "s.andreeva@example.com",
+            "telegram": "@andreeva_ml"
+        },
+        "branding": {
+            "logo_url": "/logos/5.svg",
+            "corporate_colors": {
+                "primary": "#8B5CF6",
+                "secondary": "#10B981"
+            },
+            "slogan": "Искусственный интеллект — реальная ценность"
+        },
+        "privacy_level": "high"
+    }
+}

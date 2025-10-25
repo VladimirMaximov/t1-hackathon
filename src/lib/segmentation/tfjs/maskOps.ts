@@ -1,9 +1,9 @@
 export type MorphMode = 'none' | 'dilate' | 'erode' | 'close';
 
 export interface MaskRefineOptions {
-    softThr: number; // 0..1
-    softK: number;   // крутизна сигмоиды
-    ema: number;     // 0..1 (вес пред. кадра)
+    softThr: number;
+    softK: number;
+    ema: number;
     morphMode: MorphMode;
 }
 
@@ -28,14 +28,11 @@ export class MaskRefiner {
         const img = this.wctx.getImageData(0, 0, w, h);
         const data = img.data;
 
-        // Берём интенсивность R-канала (маска градаций серого)
         let alpha = new Uint8ClampedArray(w * h);
         for (let i = 0, p = 0; i < data.length; i += 4, p++) alpha[p] = data[i];
 
-        // Мягкий порог (сигмоида)
         softThresholdInPlace(alpha, opt.softThr, opt.softK);
 
-        // EMA-сглаживание
         if (!this.prevAlpha || this.prevAlpha.length !== alpha.length) {
             this.prevAlpha = alpha.slice();
         } else {
@@ -46,12 +43,10 @@ export class MaskRefiner {
             this.prevAlpha.set(alpha);
         }
 
-        // Морфология
         if (opt.morphMode === 'dilate') alpha = dilate3x3(alpha, w, h);
         else if (opt.morphMode === 'erode') alpha = erode3x3(alpha, w, h);
         else if (opt.morphMode === 'close') { alpha = dilate3x3(alpha, w, h); alpha = erode3x3(alpha, w, h); }
 
-        // Записываем альфу (RGB=0, A=alpha)
         for (let i = 0, p = 0; i < data.length; i += 4, p++) {
             data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = alpha[p];
         }

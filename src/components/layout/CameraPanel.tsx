@@ -9,57 +9,65 @@ import type { BodySegmenter } from '@tensorflow-models/body-segmentation';
 
 type BgItem = { id: string; label: string; src: string };
 const BACKGROUNDS: BgItem[] = [
-    { id: 'bg1', label: 'фон 1', src: '/backgrounds/bg1.jpg' },
-    { id: 'bg2', label: 'фон 2', src: '/backgrounds/bg2.jpg' },
-    { id: 'bg3', label: 'фон 3', src: '/backgrounds/bg3.jpg' },
-    { id: 'bg4', label: 'фон 4', src: '/backgrounds/bg4.jpg' },
-    { id: 'bg5', label: 'фон 5', src: '/backgrounds/bg5.jpg' },
-    { id: 'bg6', label: 'фон 6', src: '/backgrounds/bg6.jpg' }
+    { id: 'bg1', label: 'фон 1', src: '/backgrounds/12.png' },
+    { id: 'bg2', label: 'фон 2', src: '/backgrounds/13.png' },
+    { id: 'bg3', label: 'фон 3', src: '/backgrounds/14.png' },
+    { id: 'bg4', label: 'фон 4', src: '/backgrounds/1.jpg' },
+    { id: 'bg5', label: 'фон 5', src: '/backgrounds/2.jpg' },
+    { id: 'bg6', label: 'фон 6', src: '/backgrounds/6.jpg' }
 ];
 
+type OverlayData = {
+    full_name: string;
+    position: string;
+    company: string;
+    department: string;
+    office_location: string;
+    contact: { email: string; telegram: string };
+    branding: {
+        logo_url: string;
+        corporate_colors: { primary: string; secondary: string };
+        slogan: string;
+    };
+    privacy_level: "low" | "medium" | "high";
+};
+
 export default function CameraPanel() {
-    // UI
     const [selectedBg, setSelectedBg] = useState<string | null>(null);
     const [running, setRunning] = useState(false);
 
-    // размеры блока камеры
     const [vidSize, setVidSize] = useState<{ w: number; h: number } | null>(null);
     const wrapRef = useRef<HTMLDivElement | null>(null);
 
-    // DOM
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const outCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    // оффскрины
-    const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);   // маска (входной размер)
-    const maskSmoothRef = useRef<HTMLCanvasElement | null>(null);   // сглаженная маска (входной размер)
-    const personCanvasRef = useRef<HTMLCanvasElement | null>(null); // зеркальный человек (выходной размер)
-    const workCanvasRef = useRef<HTMLCanvasElement | null>(null);   // стабильный вход для модели
+    const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const maskSmoothRef = useRef<HTMLCanvasElement | null>(null);
+    const personCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const workCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    // сегментер (TFJS) и бэкенд
     const segRef = useRef<BodySegmenter | null>(null);
     const [backend, setBackend] = useState<TfjsBackend | '—'>('—');
-    const backendRef = useRef<string>('—'); // для мгновенных метрик
+    const backendRef = useRef<string>('—');
 
-    // цикл
     const rafRef = useRef<number | null>(null);
 
-    // метрики (state + refs)
     const [fps, setFps] = useState(0);
     const [latency, setLatency] = useState(0);
     const fpsRef = useRef(0);
     const latencyRef = useRef(0);
     const statusRef = useRef<'Камера запущена' | 'Камера остановлена'>('Камера остановлена');
     const fpsWin = useRef({ last: performance.now(), frames: 0 });
-    const lastEmitRef = useRef(0); // троттлинг отправки метрик
+    const lastEmitRef = useRef(0);
 
-    // фон и параметры композита
     const [bgFileUrl, setBgFileUrl] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
-    const bgOpacityRef = useRef(1.0); // 0..1 — непрозрачность фон-картинки (OVERLAY)
-    const featherPxRef = useRef(0);   // 0..15 — сглаживание (px) на выходном кадре
+    const bgOpacityRef = useRef(1.0);
+    const featherPxRef = useRef(0);
 
-    // загрузка изображения фона
+    const [overlay, setOverlay] = useState<OverlayData | null>(null);
+
     useEffect(() => {
         if (!bgFileUrl) { setBgImage(null); return; }
         const img = new Image();
@@ -69,7 +77,6 @@ export default function CameraPanel() {
         return () => URL.revokeObjectURL(bgFileUrl);
     }, [bgFileUrl]);
 
-    // селект фона → уведомляем ControlPanel и подгружаем превью
     useEffect(() => {
         const payload = selectedBg
             ? { id: selectedBg, src: BACKGROUNDS.find(b => b.id === selectedBg)!.src }
@@ -80,7 +87,6 @@ export default function CameraPanel() {
         setBgFileUrl(src ?? null);
     }, [selectedBg]);
 
-    // адаптация outCanvas под контейнер
     useEffect(() => {
         if (!vidSize || !wrapRef.current || !outCanvasRef.current) return;
         const aspect = vidSize.w / vidSize.h;
@@ -100,7 +106,6 @@ export default function CameraPanel() {
         return () => ro.disconnect();
     }, [vidSize]);
 
-    // оффскрины
     function ensureMaskCanvas(w: number, h: number) {
         if (!maskCanvasRef.current) maskCanvasRef.current = document.createElement('canvas');
         const c = maskCanvasRef.current!;
@@ -126,13 +131,10 @@ export default function CameraPanel() {
         return c;
     }
 
-    // простое сглаживание маски через blur() на временном канвасе.
-    // blur задаём в пикселях выходного кадра и пересчитываем в пиксели маски.
     function getSmoothedMask(maskC: HTMLCanvasElement, outW: number, outH: number, featherOutPx: number) {
         const inW = maskC.width, inH = maskC.height;
         if (!inW || !inH || featherOutPx <= 0) return maskC;
-        // эквивалент размытия в пикселях маски (чтобы "перо" визуально соответствовало выходу)
-        const scaleToOut = outW / inW; // используем ширину как репер
+        const scaleToOut = outW / inW;
         const blurPxMask = Math.max(0.25, featherOutPx / Math.max(1e-6, scaleToOut));
         const tmp = ensureMaskSmoothCanvas(inW, inH);
         const tctx = tmp.getContext('2d')!;
@@ -143,21 +145,16 @@ export default function CameraPanel() {
         return tmp;
     }
 
-    // === TFJS-сегментер
     const ensureModel = useCallback(async () => {
         if (!segRef.current) {
-            const { segmenter, backendLabel } = await createSelfieSegmenterTFJS({
-                modelType: 'general',
-                // modelUrl: можно НЕ указывать — возьмётся дефолтный CDN от либы.
-            });
+            const { segmenter, backendLabel } = await createSelfieSegmenterTFJS({ modelType: 'general' });
             segRef.current = segmenter;
-            setBackend(backendLabel);          // обновим React state (для UI)
-            backendRef.current = backendLabel; // и сразу ref (для метрик)
+            setBackend(backendLabel);
+            backendRef.current = backendLabel;
         }
         return segRef.current!;
     }, []);
 
-    // утилита: отправка метрик (троттлинг ~250 мс)
     const emitMetrics = useCallback(() => {
         const now = performance.now();
         if (now - lastEmitRef.current < 250) return;
@@ -172,7 +169,15 @@ export default function CameraPanel() {
         }));
     }, []);
 
-    // композиция кадра
+    useEffect(() => {
+        const onOverlay = (e: Event) => {
+            const data = (e as CustomEvent<OverlayData>).detail;
+            setOverlay(data ?? null);
+        };
+        window.addEventListener("overlay:update", onOverlay as EventListener);
+        return () => window.removeEventListener("overlay:update", onOverlay as EventListener);
+    }, []);
+
     const renderFrame = useCallback(async () => {
         const video = videoRef.current!, canvas = outCanvasRef.current!;
         const ctx = canvas.getContext('2d', { alpha: true })!;
@@ -184,8 +189,7 @@ export default function CameraPanel() {
         try {
             const seg = await ensureModel();
 
-            // Стабильный вход для модели: уменьшаем кадр и подаём canvas
-            const s = 0.75; // масштаб входа
+            const s = 0.75;
             const inW = Math.max(8, Math.round(W * s));
             const inH = Math.max(8, Math.round(H * s));
             const workC = ensureWorkCanvas(inW, inH);
@@ -193,18 +197,15 @@ export default function CameraPanel() {
             wctx.clearRect(0, 0, inW, inH);
             wctx.drawImage(video, 0, 0, inW, inH);
 
-            // 1) сегментация workCanvas
             const t1 = performance.now();
             const people = await seg.segmentPeople(workC, { flipHorizontal: false, multiSegmentation: false, segmentBodyParts: false });
             const hasPerson = !!(people && people.length);
 
-            // 2) маска только если есть человек
             let maskC: HTMLCanvasElement | null = null;
             if (hasPerson) {
                 const maskImg = await makeBinaryMask(people, 0.7, { width: inW, height: inH });
                 maskC = ensureMaskCanvas(maskImg.width, maskImg.height);
                 maskC.getContext('2d')!.putImageData(maskImg, 0, 0);
-                // добавляем сглаживание (в реальном времени)
                 maskC = getSmoothedMask(maskC, W, H, featherPxRef.current);
             }
             const t2 = performance.now();
@@ -212,26 +213,22 @@ export default function CameraPanel() {
             setLatency(inferMs);
             latencyRef.current = inferMs;
 
-            // 3) слой «зеркальный человек»
             const personC = ensurePersonCanvas(W, H);
             const pctx = personC.getContext('2d')!;
             pctx.save();
             pctx.clearRect(0, 0, W, H);
             if (hasPerson && maskC) {
-                pctx.translate(W, 0); pctx.scale(-1, 1);   // зеркалим только человека
+                pctx.translate(W, 0); pctx.scale(-1, 1);
                 pctx.drawImage(video, 0, 0, W, H);
                 pctx.globalCompositeOperation = 'destination-in';
-                pctx.drawImage(maskC, 0, 0, maskC.width, maskC.height, 0, 0, W, H); // масштабируем маску
+                pctx.drawImage(maskC, 0, 0, maskC.width, maskC.height, 0, 0, W, H);
             }
             pctx.restore();
 
-            // 4) композиция: реальный фон (с вырезом) + картинка-фон (opacity) + человек
             const effOpacity = hasPerson ? bgOpacityRef.current : 0.0;
-
             ctx.save();
             ctx.clearRect(0, 0, W, H);
 
-            // a) реальный фон (НЕ зеркалим), вырезаем человека
             const realBgAlpha = 1 - effOpacity;
             if (realBgAlpha > 0) {
                 ctx.globalAlpha = realBgAlpha;
@@ -243,7 +240,6 @@ export default function CameraPanel() {
                 }
             }
 
-            // b) картинка-фон (как cover) с альфой effOpacity
             if (effOpacity > 0) {
                 ctx.globalAlpha = effOpacity;
                 ctx.globalCompositeOperation = 'source-over';
@@ -251,7 +247,6 @@ export default function CameraPanel() {
                 else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
             }
 
-            // c) человек поверх
             if (hasPerson) {
                 ctx.globalAlpha = 1.0;
                 ctx.globalCompositeOperation = 'source-over';
@@ -263,7 +258,6 @@ export default function CameraPanel() {
             console.error('[CameraPanel] renderFrame error:', e);
         }
 
-        // FPS-калькулятор
         const now = performance.now();
         fpsWin.current.frames += 1;
         const dt = now - fpsWin.current.last;
@@ -274,13 +268,10 @@ export default function CameraPanel() {
             fpsWin.current.frames = 0; fpsWin.current.last = now;
         }
 
-        // разошлём метрики (троттлинг)
         emitMetrics();
-
         rafRef.current = requestAnimationFrame(renderFrame);
     }, [ensureModel, bgImage, emitMetrics]);
 
-    // старт / стоп (события от ControlPanel)
     const startCamera = useCallback(async () => {
         if (running) return;
         try {
@@ -303,11 +294,10 @@ export default function CameraPanel() {
             const canvas = outCanvasRef.current!;
             canvas.width = vw; canvas.height = vh;
 
-            await ensureModel(); // здесь backendRef.current уже обновится
+            await ensureModel();
             setRunning(true);
             statusRef.current = 'Камера запущена';
 
-            // сразу отдадим стартовые метрики с актуальным backend
             fpsRef.current = 0;
             latencyRef.current = 0;
             emitMetrics();
@@ -331,7 +321,6 @@ export default function CameraPanel() {
 
         setRunning(false);
         statusRef.current = 'Камера остановлена';
-        // финальный эмит, чтобы сразу увидеть статус
         emitMetrics();
 
         const c = outCanvasRef.current!;
@@ -343,11 +332,11 @@ export default function CameraPanel() {
         const onStart = () => startCamera();
         const onStop = () => stopCamera();
         const onOpacity = (e: Event) => {
-            const v = Number((e as CustomEvent).detail); // 0..100 — непрозрачность фон-картинки
+            const v = Number((e as CustomEvent).detail); // 0..100
             bgOpacityRef.current = Math.max(0, Math.min(1, v / 100));
         };
         const onFeather = (e: Event) => {
-            const v = Number((e as CustomEvent).detail); // 0..15 — перо сглаживания (px)
+            const v = Number((e as CustomEvent).detail); // 0..15
             featherPxRef.current = Math.max(0, Math.min(15, Math.round(v)));
         };
         window.addEventListener('camera:start', onStart);
@@ -364,10 +353,98 @@ export default function CameraPanel() {
 
     const aspectStr = vidSize ? `${vidSize.w} / ${vidSize.h}` : '16 / 9';
 
+    function renderOverlay() {
+        if (!running || !overlay) return null;
+
+        const lvl = overlay.privacy_level ?? "medium";
+        const showLow = lvl === "low" || lvl === "medium" || lvl === "high";
+        const showMed = lvl === "medium" || lvl === "high";
+        const showHigh = lvl === "high";
+
+        const primary = overlay.branding?.corporate_colors?.primary || "#0052CC";
+        const secondary = overlay.branding?.corporate_colors?.secondary || "#00B8D9";
+
+        return (
+            <div
+                style={{
+                    position: "absolute",
+                    top: 12,
+                    right: 12,
+                    maxWidth: 420,
+                    color: "#fff",
+                    padding: 12,
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    background:
+                        "linear-gradient(135deg, rgba(20,20,20,0.55), rgba(20,20,20,0.35))",
+                    boxShadow: "0 6px 24px rgba(0,0,0,0.35)",
+                    backdropFilter: "blur(6px)",
+                    WebkitBackdropFilter: "blur(6px)",
+                    pointerEvents: "none",
+                    display: "grid",
+                    gap: 10,
+                }}
+            >
+                <div
+                    style={{
+                        height: 3,
+                        width: "100%",
+                        borderRadius: 2,
+                        background: `linear-gradient(90deg, ${primary}, ${secondary})`,
+                    }}
+                />
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {overlay.branding?.logo_url && (
+                        <img
+                            src={overlay.branding.logo_url}
+                            alt="logo"
+                            style={{
+                                width: 52,
+                                height: 52,
+                                objectFit: "contain",
+                                borderRadius: 10,
+                                background: "rgba(255,255,255,0.06)",
+                                boxShadow: "0 2px 10px rgba(0,0,0,0.2)",
+                                flexShrink: 0,
+                            }}
+                        />
+                    )}
+
+                    {showLow && (
+                        <div style={{ display: "grid", gap: 4 }}>
+                            <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>
+                                {overlay.full_name}
+                            </div>
+                            {overlay.position && (
+                                <div style={{ fontSize: 13, opacity: 0.95 }}>{overlay.position}</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {showMed && (
+                    <div style={{ fontSize: 12, opacity: 0.92, display: "grid", gap: 4 }}>
+                        {overlay.company && <div><b>Компания:</b> {overlay.company}</div>}
+                        {overlay.department && <div><b>Отдел:</b> {overlay.department}</div>}
+                        {overlay.office_location && <div><b>Локация:</b> {overlay.office_location}</div>}
+                    </div>
+                )}
+
+                {showHigh && (overlay.contact?.email || overlay.contact?.telegram) && (
+                    <div style={{ fontSize: 12, display: "grid", gap: 4 }}>
+                        {overlay.contact.email && <div><b>Email:</b> {overlay.contact.email}</div>}
+                        {overlay.contact.telegram && <div><b>Telegram:</b> {overlay.contact.telegram}</div>}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+
     return (
         <section className="camera">
             <div className="pane-content">
-                {/* Вывод */}
                 <div
                     ref={wrapRef}
                     style={{
@@ -385,9 +462,9 @@ export default function CameraPanel() {
                         ref={outCanvasRef}
                         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
                     />
+                    {renderOverlay()}
                 </div>
 
-                {/* Экран выбора фона — пока камера не запущена */}
                 {!running && (
                     <>
                         <div className="bg-grid">
@@ -412,7 +489,6 @@ export default function CameraPanel() {
                     </>
                 )}
 
-                {/* скрытые элементы */}
                 <video ref={videoRef} playsInline muted style={{ display: 'none' }} />
             </div>
         </section>

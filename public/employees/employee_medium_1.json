@@ -1,0 +1,22 @@
+{
+    "employee": {
+        "full_name": "Екатерина Смирнова",
+        "position": "Руководитель проектов",
+        "company": "T1 Холдинг",
+        "department": "PMO",
+        "office_location": "Новосибирск, Техно Парк",
+        "contact": {
+            "email": "ekaterina.smirnova@example.com",
+            "telegram": "@smirnova_pm"
+        },
+        "branding": {
+            "logo_url": "/logos/3.svg",
+            "corporate_colors": {
+                "primary": "#FF6B6B",
+                "secondary": "#FFD93D"
+            },
+            "slogan": "Движемся вперёд вместе"
+        },
+        "privacy_level": "medium"
+    }
+}

@@ -1,0 +1,22 @@
+{
+    "employee": {
+        "full_name": "Денис Орлов",
+        "position": "Frontend-разработчик",
+        "company": "T1 Холдинг",
+        "department": "Web",
+        "office_location": "Новосибирск, Техно Парк",
+        "contact": {
+            "email": "denis.orlov@example.com",
+            "telegram": "@orlov_js"
+        },
+        "branding": {
+            "logo_url": "/logos/4.svg",
+            "corporate_colors": {
+                "primary": "#0EA5E9",
+                "secondary": "#22C55E"
+            },
+            "slogan": "Быстрые интерфейсы — быстрый бизнес"
+        },
+        "privacy_level": "medium"
+    }
+}

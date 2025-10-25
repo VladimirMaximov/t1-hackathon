@@ -1,14 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 
+type EmployeeJSON = {
+    employee?: {
+        full_name?: string;
+        position?: string;
+        company?: string;
+        department?: string;
+        office_location?: string;
+        contact?: { email?: string; telegram?: string };
+        branding?: {
+            logo_url?: string;
+            corporate_colors?: { primary?: string; secondary?: string };
+            slogan?: string;
+        };
+        privacy_level?: "low" | "medium" | "high";
+    };
+};
+
 export default function ControlPanel() {
     const [running, setRunning] = useState(false);
-    const [opacity, setOpacity] = useState(100);   // 0..100
-    const [feather, setFeather] = useState(0);     // 0..15
+    const [opacity, setOpacity] = useState(100);
+    const [feather, setFeather] = useState(0);
     const [bgSelected, setBgSelected] = useState<{ id: string; src: string } | null>(null);
+    const [fileName, setFileName] = useState<string>("");
 
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    // узнаём от CameraPanel, выбран ли фон
     useEffect(() => {
         function onBg(ev: Event) {
             const detail = (ev as CustomEvent).detail as { id: string; src: string } | null;
@@ -18,7 +35,6 @@ export default function ControlPanel() {
         return () => window.removeEventListener("bg:selected", onBg);
     }, []);
 
-    // синхронизируемся, если CameraPanel сам сообщил о стопе/старте
     useEffect(() => {
         const onStarted = () => setRunning(true);
         const onStopped = () => setRunning(false);
@@ -48,18 +64,52 @@ export default function ControlPanel() {
         fileInputRef.current?.click();
     }
 
-    function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        console.log("[JSON] выбран файл:", file.name, file.size, "bytes");
+    function sanitize(obj: EmployeeJSON["employee"] | undefined) {
+        const e = obj ?? {};
+        const lvl = (e.privacy_level ?? "medium") as "low" | "medium" | "high";
+        return {
+            full_name: e.full_name ?? "",
+            position: e.position ?? "",
+            company: e.company ?? "",
+            department: e.department ?? "",
+            office_location: e.office_location ?? "",
+            contact: {
+                email: e.contact?.email ?? "",
+                telegram: e.contact?.telegram ?? ""
+            },
+            branding: {
+                logo_url: e.branding?.logo_url ?? "",
+                corporate_colors: {
+                    primary: e.branding?.corporate_colors?.primary ?? "#0052CC",
+                    secondary: e.branding?.corporate_colors?.secondary ?? "#00B8D9"
+                },
+                slogan: e.branding?.slogan ?? ""
+            },
+            privacy_level: lvl
+        };
     }
 
-    // уведомляем CameraPanel о непрозрачности (0..100)
+    async function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setFileName(file.name);
+        try {
+            const text = await file.text();
+            const json = JSON.parse(text) as EmployeeJSON;
+            const data = sanitize(json.employee);
+            window.dispatchEvent(new CustomEvent("overlay:update", { detail: data }));
+        } catch (err) {
+            console.error("[JSON] parse error:", err);
+            alert("Не удалось прочитать JSON. Проверьте формат.");
+        } finally {
+            e.target.value = "";
+        }
+    }
+
     useEffect(() => {
         window.dispatchEvent(new CustomEvent("ui:opacity", { detail: opacity }));
     }, [opacity]);
 
-    // уведомляем CameraPanel о сглаживании маски (0..15 px)
     useEffect(() => {
         window.dispatchEvent(new CustomEvent("ui:feather", { detail: feather }));
     }, [feather]);
@@ -67,25 +117,29 @@ export default function ControlPanel() {
     return (
         <section className="controls">
             <div className="pane-content">
-                <div className="controls-content">
-                    {/* Старт / Стоп */}
+                <div className="controls-content" style={{ display: "grid", gap: 12 }}>
+
                     <button
                         className="confirm-btn"
                         onClick={handleStartStop}
                         disabled={!running && !bgSelected}
                     >
-                        {running ? "Остановить камеру и вернуться" : "Зафиксировать выбор и запустить камеру"}
+                        {running ? "Завершить" : "Зафиксировать фон и начать"}
                     </button>
 
-                    {/* Загрузка JSON */}
-                    <button onClick={handlePickFile}>Загрузить JSON данные</button>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="application/json"
-                        onChange={onFileChosen}
-                        style={{ display: "none" }}
-                    />
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                        <button className="confirm-btn" onClick={handlePickFile}>
+                            Загрузить JSON данные
+                        </button>
+                        {fileName && <span className="hint">Файл: <b>{fileName}</b></span>}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="application/json"
+                            onChange={onFileChosen}
+                            style={{ display: "none" }}
+                        />
+                    </div>
 
                     {/* Слайдер непрозрачности фона */}
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -100,7 +154,7 @@ export default function ControlPanel() {
                         />
                         <span>100</span>
                         <span className="hint">
-                            Непрозрачность фона: <b>{opacity}</b>
+                            Непрозрачность: <b>{opacity}</b>
                         </span>
                     </div>
 
@@ -118,7 +172,7 @@ export default function ControlPanel() {
                         />
                         <span>15</span>
                         <span className="hint">
-                            Сглаживание маски: <b>{feather}px</b>
+                            Сглаживание: <b>{feather}px</b>
                         </span>
                     </div>
                 </div>
