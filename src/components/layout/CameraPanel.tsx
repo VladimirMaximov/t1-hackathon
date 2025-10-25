@@ -164,6 +164,7 @@ export default function CameraPanel() {
     }
 
     const ensureModel = useCallback(async () => {
+        await tf.ready();
         if (!segRef.current) {
             const { segmenter, backendLabel } = await createSelfieSegmenterTFJS({ modelType: 'general' });
             segRef.current = segmenter;
@@ -204,7 +205,6 @@ export default function CameraPanel() {
         if (!W || !H) { rafRef.current = requestAnimationFrame(renderFrame); return; }
         if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
 
-        tf.engine().startScope();
         let people: any[] | null = null;
 
         try {
@@ -282,7 +282,6 @@ export default function CameraPanel() {
             if ((frameCountRef.current++ % 60) === 0) {
                 try { await tf.nextFrame(); } catch { }
             }
-            tf.engine().endScope();
         }
 
         const now = performance.now();
@@ -358,7 +357,6 @@ export default function CameraPanel() {
         c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
     }, [emitMetrics]);
 
-    // внешние события
     useEffect(() => {
         const onStart = () => startCamera();
         const onStop = () => stopCamera();
