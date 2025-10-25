@@ -7,6 +7,7 @@ import {
 } from '../../lib/segmentation/tfjs/selfieSegmenter';
 import type { BodySegmenter } from '@tensorflow-models/body-segmentation';
 import * as tf from '@tensorflow/tfjs-core';
+import { acquireRunLock, clearRunLock, isRunLockActive } from '@/lib/utils/runLock';
 
 type BgItem = { id: string; label: string; src: string };
 
@@ -72,6 +73,9 @@ export default function CameraPanel() {
     const [overlay, setOverlay] = useState<OverlayData | null>(null);
 
     const frameCountRef = useRef(0);
+    const lockIdRef = useRef<number | null>(null);
+    const mountedRef = useRef(true);
+    useEffect(() => () => { mountedRef.current = false; }, []);
 
     useEffect(() => {
         if (!bgFileUrl) { setBgImage(null); return; }
@@ -174,6 +178,24 @@ export default function CameraPanel() {
         return segRef.current!;
     }, []);
 
+    const stopInternals = useCallback(() => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+
+        const v = videoRef.current;
+        if (v?.srcObject instanceof MediaStream) {
+            try { v.srcObject.getTracks().forEach(t => t.stop()); } catch { }
+            v.srcObject = null;
+        }
+
+        try { segRef.current?.dispose?.(); } catch { }
+        segRef.current = null;
+
+        const c = outCanvasRef.current;
+        if (c) c.getContext('2d')?.clearRect(0, 0, c.width, c.height);
+    }, []);
+
+
     const emitMetrics = useCallback(() => {
         const now = performance.now();
         if (now - lastEmitRef.current < 250) return;
@@ -198,6 +220,8 @@ export default function CameraPanel() {
     }, []);
 
     const renderFrame = useCallback(async () => {
+        if (!isRunLockActive(lockIdRef.current)) return;
+
         const video = videoRef.current!, canvas = outCanvasRef.current!;
         const ctx = canvas.getContext('2d', { alpha: true })!;
 
@@ -303,6 +327,8 @@ export default function CameraPanel() {
         try {
             if (!selectedBg) { alert('Сначала выберите фон.'); return; }
 
+            lockIdRef.current = acquireRunLock(stopInternals);
+
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
                 audio: false
@@ -336,26 +362,13 @@ export default function CameraPanel() {
     }, [renderFrame, running, selectedBg, ensureModel, emitMetrics]);
 
     const stopCamera = useCallback(async () => {
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-
-        const video = videoRef.current;
-        if (video?.srcObject instanceof MediaStream) {
-            video.srcObject.getTracks().forEach(t => t.stop());
-            video.srcObject = null;
-        }
-
-        try { await (segRef.current as any)?.dispose?.(); } catch { }
-        segRef.current = null;
-        try { await tf.nextFrame(); } catch { }
-
+        stopInternals();
         setRunning(false);
         statusRef.current = 'Камера остановлена';
         emitMetrics();
+        try { clearRunLock(lockIdRef.current); } catch { }
+    }, [emitMetrics, stopInternals]);
 
-        const c = outCanvasRef.current!;
-        c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
-    }, [emitMetrics]);
 
     useEffect(() => {
         const onStart = () => startCamera();
