@@ -8,14 +8,17 @@ import {
 import type { BodySegmenter } from '@tensorflow-models/body-segmentation';
 
 type BgItem = { id: string; label: string; src: string };
+
+const BASE = import.meta.env.BASE_URL || '/';
 const BACKGROUNDS: BgItem[] = [
-    { id: 'bg1', label: 'фон 1', src: '/backgrounds/12.png' },
-    { id: 'bg2', label: 'фон 2', src: '/backgrounds/13.png' },
-    { id: 'bg3', label: 'фон 3', src: '/backgrounds/14.png' },
-    { id: 'bg4', label: 'фон 4', src: '/backgrounds/1.jpg' },
-    { id: 'bg5', label: 'фон 5', src: '/backgrounds/2.jpg' },
-    { id: 'bg6', label: 'фон 6', src: '/backgrounds/6.jpg' }
+    { id: 'bg1', label: 'фон 1', src: `${BASE}backgrounds/12.png` },
+    { id: 'bg2', label: 'фон 2', src: `${BASE}backgrounds/13.png` },
+    { id: 'bg3', label: 'фон 3', src: `${BASE}backgrounds/14.png` },
+    { id: 'bg4', label: 'фон 4', src: `${BASE}backgrounds/1.jpg` },
+    { id: 'bg5', label: 'фон 5', src: `${BASE}backgrounds/2.jpg` },
+    { id: 'bg6', label: 'фон 6', src: `${BASE}backgrounds/6.jpg` }
 ];
+
 
 type OverlayData = {
     full_name: string;
@@ -397,7 +400,7 @@ export default function CameraPanel() {
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     {overlay.branding?.logo_url && (
                         <img
-                            src={overlay.branding.logo_url}
+                            src={`${BASE}${(overlay.branding?.logo_url ?? 'logos/1.svg').replace(/^\/+/, '')}`}
                             alt="logo"
                             style={{
                                 width: 52,
