@@ -6,6 +6,7 @@ import {
     type TfjsBackend
 } from '../../lib/segmentation/tfjs/selfieSegmenter';
 import type { BodySegmenter } from '@tensorflow-models/body-segmentation';
+import * as tf from '@tensorflow/tfjs-core';
 
 type BgItem = { id: string; label: string; src: string };
 
@@ -18,7 +19,6 @@ const BACKGROUNDS: BgItem[] = [
     { id: 'bg5', label: 'фон 5', src: `${BASE}backgrounds/2.jpg` },
     { id: 'bg6', label: 'фон 6', src: `${BASE}backgrounds/6.jpg` }
 ];
-
 
 type OverlayData = {
     full_name: string;
@@ -71,13 +71,17 @@ export default function CameraPanel() {
 
     const [overlay, setOverlay] = useState<OverlayData | null>(null);
 
+    const frameCountRef = useRef(0);
+
     useEffect(() => {
         if (!bgFileUrl) { setBgImage(null); return; }
         const img = new Image();
         img.onload = () => setBgImage(img);
         img.onerror = () => setBgImage(null);
         img.src = bgFileUrl;
-        return () => URL.revokeObjectURL(bgFileUrl);
+        return () => {
+            if (bgFileUrl && bgFileUrl.startsWith('blob:')) URL.revokeObjectURL(bgFileUrl);
+        };
     }, [bgFileUrl]);
 
     useEffect(() => {
@@ -148,6 +152,17 @@ export default function CameraPanel() {
         return tmp;
     }
 
+    async function disposeSegmentationMasks(people: any[] | undefined | null) {
+        if (!people) return;
+        for (const seg of people) {
+            const mask: any = seg?.mask;
+            if (mask && typeof mask.toTensor === 'function') {
+                const t = await mask.toTensor();
+                t.dispose();
+            }
+        }
+    }
+
     const ensureModel = useCallback(async () => {
         if (!segRef.current) {
             const { segmenter, backendLabel } = await createSelfieSegmenterTFJS({ modelType: 'general' });
@@ -189,6 +204,9 @@ export default function CameraPanel() {
         if (!W || !H) { rafRef.current = requestAnimationFrame(renderFrame); return; }
         if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
 
+        tf.engine().startScope();
+        let people: any[] | null = null;
+
         try {
             const seg = await ensureModel();
 
@@ -201,7 +219,7 @@ export default function CameraPanel() {
             wctx.drawImage(video, 0, 0, inW, inH);
 
             const t1 = performance.now();
-            const people = await seg.segmentPeople(workC, { flipHorizontal: false, multiSegmentation: false, segmentBodyParts: false });
+            people = await seg.segmentPeople(workC, { flipHorizontal: false, multiSegmentation: false, segmentBodyParts: false });
             const hasPerson = !!(people && people.length);
 
             let maskC: HTMLCanvasElement | null = null;
@@ -259,6 +277,12 @@ export default function CameraPanel() {
             ctx.restore();
         } catch (e) {
             console.error('[CameraPanel] renderFrame error:', e);
+        } finally {
+            await disposeSegmentationMasks(people);
+            if ((frameCountRef.current++ % 60) === 0) {
+                try { await tf.nextFrame(); } catch { }
+            }
+            tf.engine().endScope();
         }
 
         const now = performance.now();
@@ -312,7 +336,7 @@ export default function CameraPanel() {
         }
     }, [renderFrame, running, selectedBg, ensureModel, emitMetrics]);
 
-    const stopCamera = useCallback(() => {
+    const stopCamera = useCallback(async () => {
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
 
@@ -321,6 +345,10 @@ export default function CameraPanel() {
             video.srcObject.getTracks().forEach(t => t.stop());
             video.srcObject = null;
         }
+
+        try { await (segRef.current as any)?.dispose?.(); } catch { }
+        segRef.current = null;
+        try { await tf.nextFrame(); } catch { }
 
         setRunning(false);
         statusRef.current = 'Камера остановлена';
@@ -443,7 +471,6 @@ export default function CameraPanel() {
             </div>
         );
     }
-
 
     return (
         <section className="camera">
