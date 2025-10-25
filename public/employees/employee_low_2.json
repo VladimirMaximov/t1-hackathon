@@ -1,0 +1,22 @@
+{
+    "employee": {
+        "full_name": "Михаил Кузнецов",
+        "position": "Аналитик данных",
+        "company": "T1 Холдинг",
+        "department": "Analytics",
+        "office_location": "Новосибирск, Техно Парк",
+        "contact": {
+            "email": "m.kuznetsov@example.com",
+            "telegram": "@mkuznetsov"
+        },
+        "branding": {
+            "logo_url": "/logos/2.png",
+            "corporate_colors": {
+                "primary": "#6C5CE7",
+                "secondary": "#00CEC9"
+            },
+            "slogan": "Данные — наше топливо"
+        },
+        "privacy_level": "low"
+    }
+}

@@ -1,0 +1,22 @@
+{
+    "employee": {
+        "full_name": "Артём Власов",
+        "position": "DevOps-инженер",
+        "company": "T1 Холдинг",
+        "department": "Platform",
+        "office_location": "Новосибирск, Техно Парк",
+        "contact": {
+            "email": "a.vlasov@example.com",
+            "telegram": "@vlasov_ops"
+        },
+        "branding": {
+            "logo_url": "/logos/6.svg",
+            "corporate_colors": {
+                "primary": "#1F2937",
+                "secondary": "#3B82F6"
+            },
+            "slogan": "Надёжная платформа — уверенный релиз"
+        },
+        "privacy_level": "high"
+    }
+}

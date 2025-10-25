@@ -1,11 +1,3 @@
-// TFJS runtime only (без mediapipe).
-// Автовыбор backend: webgpu → wasm → webgl.
-// Опционально: локальный modelUrl и локальный wasmPath через window-переменные.
-//
-// (необязательно) До инициализации можно указать:
-//   (window as any).__SELFIE_TFJS_MODEL_URL__ = '/models/selfie/tfjs/general/model.json'
-//   (window as any).__TFJS_WASM_PATH__        = '/tfjs/wasm/'   // если кладёшь *.wasm локально
-
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-converter';
 import '@tensorflow/tfjs-backend-webgpu';
@@ -19,8 +11,8 @@ import type { BodySegmenter } from '@tensorflow-models/body-segmentation';
 export type TfjsBackend = 'webgpu' | 'wasm' | 'webgl';
 
 export interface BackendOptions {
-  preferBackends?: TfjsBackend[];   // по умолчанию ['webgpu','wasm','webgl']
-  wasmPath?: string;                 // путь к *.wasm (если хочешь локально)
+  preferBackends?: TfjsBackend[];
+  wasmPath?: string;
 }
 
 export async function pickTfjsBackend(opts: BackendOptions = {}): Promise<TfjsBackend> {
@@ -43,29 +35,24 @@ export async function pickTfjsBackend(opts: BackendOptions = {}): Promise<TfjsBa
 }
 
 export interface CreateSelfieTfjsOptions {
-  modelType?: 'general' | 'landscape'; // по умолчанию 'general'
-  /** Абсолютный или относительный URL до model.json (локально в /public или CDN). */
+  modelType?: 'general' | 'landscape';
   modelUrl?: string;
-  backend?: TfjsBackend;               // если хочешь жёстко зафиксировать
+  backend?: TfjsBackend;
 }
 
-/** Создание сегментера Selfie Segmentation в runtime 'tfjs'. */
 export async function createSelfieSegmenterTFJS(
   opts: CreateSelfieTfjsOptions = {}
 ): Promise<{ segmenter: BodySegmenter; backendLabel: TfjsBackend }> {
   const model = bodySegmentation.SupportedModels.MediaPipeSelfieSegmentation;
 
-  // 1) выбираем/включаем TFJS-бэкенд
   const be = opts.backend ?? await pickTfjsBackend();
 
-  // 2) конфиг сегментера
   const g: any = globalThis as any;
   const cfg: any = {
     runtime: 'tfjs',
     modelType: opts.modelType ?? 'general',
   };
 
-  // приоритет: явный opts.modelUrl → window.__SELFIE_TFJS_MODEL_URL__ → дефолтный CDN-путь либы
   const explicit = opts.modelUrl ?? g?.__SELFIE_TFJS_MODEL_URL__;
   if (explicit) cfg.modelUrl = explicit;
 
@@ -73,10 +60,6 @@ export async function createSelfieSegmenterTFJS(
   return { segmenter, backendLabel: be };
 }
 
-/**
- * Безопасная бинарная маска.
- * Любые сбои/некорректные размеры → прозрачная маска fallback-размера.
- */
 export async function makeBinaryMask(
   segmentations: unknown[] | null | undefined,
   threshold: number,
@@ -101,7 +84,6 @@ export async function makeBinaryMask(
   }
 }
 
-/** Рисует картинку «как cover». */
 export function drawCover(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,

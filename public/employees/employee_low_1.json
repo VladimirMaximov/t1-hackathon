@@ -1,0 +1,22 @@
+{
+    "employee": {
+        "full_name": "Ирина Петрова",
+        "position": "Продуктовый дизайнер",
+        "company": "T1 Холдинг",
+        "department": "Design",
+        "office_location": "Новосибирск, Техно Парк",
+        "contact": {
+            "email": "irina.petrova@example.com",
+            "telegram": "@ipetrova"
+        },
+        "branding": {
+            "logo_url": "/logos/1.svg",
+            "corporate_colors": {
+                "primary": "#2E7DFF",
+                "secondary": "#24D6C7"
+            },
+            "slogan": "Создаём продукты, которыми гордятся"
+        },
+        "privacy_level": "low"
+    }
+}
